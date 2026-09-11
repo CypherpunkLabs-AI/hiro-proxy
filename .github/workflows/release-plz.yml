@@ -33,10 +33,9 @@ jobs:
       - name: Select repository toolchain
         run: rustup show active-toolchain
 
-      - name: Update semantic version and changelog
+      - name: Update semantic version
         uses: release-plz/action@a80d79efe0a195618acb02a4089d55fe74d2505f # v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
-

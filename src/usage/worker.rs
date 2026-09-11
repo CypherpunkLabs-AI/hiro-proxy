@@ -105,7 +105,7 @@ impl UsageWorker {
             return;
         }
 
-        let batch: Vec<_> = pending.drain(..).collect();
+        let batch = std::mem::take(pending);
         let event_count = batch.len();
         match self.publish_batch(&batch).await {
             Ok(()) => tracing::info!(event_count, "published inference usage batch"),

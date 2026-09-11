@@ -1,18 +1,18 @@
 # Tinfoil Container configuration. Replace OWNER/REPO and every REPLACE_ value
 # before the first release. The release workflow replaces the image reference
 # with the immutable digest it builds.
-cvm-version: 0.7.5
+cvm-version: 0.11.0
 cpus: 2
 memory: 8192
 
 containers:
   - name: "hiro-proxy"
-    image: "ghcr.io/OWNER/REPO:placeholder"
+    image: "ghcr.io/cypherpunklabs-ai/hiro-proxy:placeholder"
     env:
       - APP_BIND_ADDR: "0.0.0.0:8080"
-      - AUTH_ISSUER: "https://REPLACE_AUTH_ISSUER"
-      - AUTH_AUTHORIZED_PARTIES: "https://REPLACE_CLIENT_ORIGIN"
-      - WEBAUTHN_RP_ORIGIN: "https://REPLACE_CLIENT_ORIGIN"
+      - AUTH_ISSUER: "https://next-cheetah-8842.clerk.accounts.dev"
+      - AUTH_AUTHORIZED_PARTIES: "https://cypherpunklabs.io"
+      - WEBAUTHN_RP_ORIGIN: "https://cypherpunklabs.io"
       - LOG_JSON: "true"
     secrets:
       - DATABASE_URL

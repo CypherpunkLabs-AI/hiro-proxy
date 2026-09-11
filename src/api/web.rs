@@ -82,6 +82,7 @@ fn normalize_host(raw: &str) -> Result<String, ApiError> {
         && !host.ends_with(".internal")
         && !host.ends_with(".localhost")
         && !host.ends_with(".home.arpa")
+        && host.parse::<IpAddr>().is_err()
         && host.split('.').all(|label| {
             !label.is_empty()
                 && label.len() <= 63
