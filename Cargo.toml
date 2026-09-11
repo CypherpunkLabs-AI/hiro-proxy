@@ -7,7 +7,7 @@ license = "AGPL-3.0-only"
 
 [dependencies]
 anyhow = "1.0"
-aws-sdk-s3 = "1.144.0"
+aws-sdk-s3 = { version = "1.145.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"] }
 axum = { version = "0.8", features = ["http2", "json", "macros"] }
 base64 = "0.23.1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -17,7 +17,7 @@ governor = "0.10.4"
 hmac = "0.13"
 http = "1"
 http-body-util = "0.1"
-jsonwebtoken = { version = "11.0.0", default-features = false, features = ["use_pem", "rust_crypto"] }
+jsonwebtoken = { version = "11.0.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 rand = "0.10.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "stream"] }
 secrecy = { version = "0.10", features = ["serde"] }

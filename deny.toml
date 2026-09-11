@@ -5,10 +5,12 @@ all-features = true
 [advisories]
 unmaintained = "workspace"
 unsound = "all"
-ignore = []
+ignore = [
+  { id = "RUSTSEC-2023-0071", reason = "The transitive rsa crate is used by the Tinfoil SEV attestation verifier for public-certificate verification, not private-key RSA operations; the reported timing attack targets private-key recovery and has no patched release." },
+]
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"
 wildcards = "deny"
 highlight = "all"
 deny = []
@@ -27,6 +29,7 @@ allow-git = [
 confidence-threshold = 0.93
 allow = [
   "0BSD",
+  "AGPL-3.0-only",
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
@@ -39,4 +42,3 @@ allow = [
   "Zlib",
 ]
 exceptions = []
-
