@@ -140,7 +140,7 @@ jobs:
           source-sha: ${{ needs.prepare.outputs.source_sha }}
           update-config: true
           image-refs: |
-            ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}
+            ghcr.io/cypherpunklabs-ai/hiro-proxy@${{ needs.build.outputs.digest }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Dispatch measurement and publication
