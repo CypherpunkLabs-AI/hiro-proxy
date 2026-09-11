@@ -1,0 +1,14 @@
+[workspace]
+changelog_update = true
+git_release_enable = false
+git_tag_enable = false
+git_only = true
+semver_check = true
+features_always_increment_minor = true
+
+[[package]]
+name = "hiro-proxy"
+publish = false
+
+[changelog]
+protect_breaking_commits = true

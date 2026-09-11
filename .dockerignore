@@ -1,0 +1,8 @@
+.git
+.github
+.env
+target
+deploy
+docs
+README.md
+tinfoil-config.yml

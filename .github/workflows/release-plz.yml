@@ -1,0 +1,42 @@
+name: Prepare Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-plz-main
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: Semantic release PR
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.actor.login != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout validated revision
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install linker
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends clang lld
+
+      - name: Select repository toolchain
+        run: rustup show active-toolchain
+
+      - name: Update semantic version and changelog
+        uses: release-plz/action@a80d79efe0a195618acb02a4089d55fe74d2505f # v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
