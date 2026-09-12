@@ -17,7 +17,7 @@ mod web_search;
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const USAGE_REQUEST_HEADER: &str = "X-Tinfoil-Request-Usage-Metrics";
 const USAGE_RESPONSE_HEADER: &str = "X-Tinfoil-Usage-Metrics";
-pub const DEEPSEEK_MODEL_ID: &str = "deepseek-v4-flash";
+pub const GLM_53_FLASH_MODEL_ID: &str = "glm-5-3-flash";
 pub const KIMI_K3_MODEL_ID: &str = "kimi-k3";
 pub const GPT_OSS_MODEL_ID: &str = "gpt-oss-120b";
 
