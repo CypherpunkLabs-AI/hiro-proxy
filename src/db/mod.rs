@@ -1,4 +1,4 @@
-use std::{str::FromStr, time::Duration};
+use std::{io, str::FromStr, time::Duration};
 
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{
@@ -11,7 +11,18 @@ pub async fn connect(url: &SecretString, max_connections: u32) -> Result<PgPool,
     // acquire_timeout and hides the real DNS/TLS/authentication error behind
     // the generic `PoolTimedOut` error.
     let options = PgConnectOptions::from_str(url.expose_secret())?;
-    PgConnection::connect_with(&options).await?.close().await?;
+    let connection = tokio::time::timeout(
+        Duration::from_secs(10),
+        PgConnection::connect_with(&options),
+    )
+    .await
+    .map_err(|_| {
+        sqlx::Error::Io(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "CockroachDB connection attempt timed out after 10 seconds",
+        ))
+    })??;
+    connection.close().await?;
 
     PgPoolOptions::new()
         .max_connections(max_connections)
