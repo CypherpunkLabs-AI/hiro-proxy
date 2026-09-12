@@ -8,6 +8,7 @@ memory: 8192
 containers:
   - name: "hiro-proxy"
     image: "ghcr.io/cypherpunklabs-ai/hiro-proxy:placeholder"
+    networks: [web]
     env:
       - APP_BIND_ADDR: "0.0.0.0:8080"
       - AUTH_ISSUER: "https://next-cheetah-8842.clerk.accounts.dev"
@@ -41,6 +42,10 @@ containers:
     restart: "on-failure"
     stop_signal: "SIGTERM"
     stop_timeout: 30
+
+networks:
+  web:
+    egress: open
 
 shim:
   upstream-port: 8080
