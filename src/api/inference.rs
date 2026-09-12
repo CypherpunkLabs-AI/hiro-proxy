@@ -42,6 +42,10 @@ struct ChatRequest {
     model: Option<String>,
     #[serde(default)]
     web_search: bool,
+    // The secure client injects this field for chat-completion URLs. Do not
+    // trust it: the proxy derives the upstream cache secret from the user ID.
+    #[serde(default, rename = "user_cache_secret")]
+    _user_cache_secret: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -235,6 +239,16 @@ mod tests {
                 .unwrap()
                 .web_search
         );
+    }
+
+    #[test]
+    fn public_chat_contract_accepts_but_ignores_sdk_cache_secret() {
+        let request = serde_json::json!({
+            "request_id": Uuid::new_v4(),
+            "messages": [{"role": "user", "content": "hello"}],
+            "user_cache_secret": "injected-by-secure-client"
+        });
+        assert!(serde_json::from_value::<ChatRequest>(request).is_ok());
     }
 
     #[test]
