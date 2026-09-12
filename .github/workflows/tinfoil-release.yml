@@ -2,13 +2,14 @@
 # tinfoil-config.yml, and create the immutable release tag.
 name: Tinfoil Release
 
-run-name: Release ${{ inputs.version || github.event.workflow_run.head_sha }}
+run-name: Release ${{ inputs.version || github.sha }}
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       version:
@@ -23,7 +24,6 @@ concurrency:
 jobs:
   prepare:
     name: Resolve release
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,7 +35,7 @@ jobs:
       - name: Checkout validated revision
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -43,7 +43,7 @@ jobs:
         id: release
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
-          VALIDATED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          VALIDATED_SHA: ${{ github.sha }}
         run: |
           package_version=$(awk '
             /^\[package\]$/ { in_package = 1; next }

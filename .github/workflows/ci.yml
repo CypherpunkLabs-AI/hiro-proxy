@@ -98,3 +98,17 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha,scope=ci
           cache-to: type=gha,mode=max,scope=ci
+
+  release:
+    name: Release
+    needs: [container]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: write
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+      pull-requests: write
+    uses: ./.github/workflows/tinfoil-release.yml
+    secrets: inherit
