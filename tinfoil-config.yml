@@ -7,7 +7,7 @@ memory: 8192
 
 containers:
   - name: "hiro-proxy"
-    image: "ghcr.io/cypherpunklabs-ai/hiro-proxy:placeholder"
+    image: "ghcr.io/cypherpunklabs-ai/hiro-proxy@sha256:b0414349d43ca2fa26675ef432dcf7636f2d6a7a1caab59566f5c23ba8aa95a8" # v0.1.4
     networks: [web]
     env:
       - APP_BIND_ADDR: "0.0.0.0:8080"
