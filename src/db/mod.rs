@@ -1,7 +1,10 @@
 use std::{str::FromStr, time::Duration};
 
 use secrecy::{ExposeSecret, SecretString};
-use sqlx::{Connection, PgConnection, PgPool, postgres::{PgConnectOptions, PgPoolOptions}};
+use sqlx::{
+    Connection, PgConnection, PgPool,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 
 pub async fn connect(url: &SecretString, max_connections: u32) -> Result<PgPool, sqlx::Error> {
     // Establish one connection directly first. PgPool otherwise retries until
