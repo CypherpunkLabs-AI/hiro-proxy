@@ -19,6 +19,7 @@ const USAGE_REQUEST_HEADER: &str = "X-Tinfoil-Request-Usage-Metrics";
 const USAGE_RESPONSE_HEADER: &str = "X-Tinfoil-Usage-Metrics";
 pub const DEEPSEEK_MODEL_ID: &str = "deepseek-v4-flash";
 pub const KIMI_K3_MODEL_ID: &str = "kimi-k3";
+pub const GPT_OSS_MODEL_ID: &str = "gpt-oss-120b";
 
 pub type InferenceStream =
     Pin<Box<dyn Stream<Item = Result<InferenceEvent, InferenceError>> + Send>>;
@@ -36,6 +37,11 @@ pub struct UsageMetrics {
     pub completion_tokens: i64,
     pub total_tokens: i64,
     pub web_search_calls: i64,
+}
+
+pub struct InferenceCompletion {
+    pub content: String,
+    pub usage: UsageMetrics,
 }
 
 impl UsageMetrics {
@@ -157,6 +163,39 @@ impl InferenceClient {
         });
 
         stream_chat_completion(&self.client, body, None).await
+    }
+
+    pub async fn complete(
+        &self,
+        request: InferenceRequest,
+    ) -> Result<InferenceCompletion, InferenceError> {
+        let mut stream = self.stream(request).await?;
+        let mut content = String::new();
+        let mut usage = None;
+
+        while let Some(event) = stream.next().await {
+            match event? {
+                InferenceEvent::Chunk(value) => {
+                    if let Some(delta) = value
+                        .get("choices")
+                        .and_then(Value::as_array)
+                        .and_then(|choices| choices.first())
+                        .and_then(|choice| choice.get("delta"))
+                        .and_then(|delta| delta.get("content"))
+                        .and_then(Value::as_str)
+                    {
+                        content.push_str(delta);
+                    }
+                }
+                InferenceEvent::Usage(metrics) => usage = Some(metrics),
+            }
+        }
+
+        let usage = usage.ok_or(InferenceError::Request)?;
+        if content.trim().is_empty() {
+            return Err(InferenceError::Request);
+        }
+        Ok(InferenceCompletion { content, usage })
     }
 }
 

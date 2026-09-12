@@ -5,6 +5,7 @@ use axum::{Router, routing::get};
 use crate::{AppState, credentials};
 
 mod attachments;
+mod chat_summary;
 mod chats;
 mod health;
 mod inference;
@@ -16,6 +17,7 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .merge(health::routes())
         .merge(attachments::routes())
+        .merge(chat_summary::routes())
         .merge(chats::routes())
         .merge(messages::routes())
         .merge(preferences::routes())
