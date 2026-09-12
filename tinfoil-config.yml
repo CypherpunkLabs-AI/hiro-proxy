@@ -7,7 +7,7 @@ memory: 8192
 
 containers:
   - name: "hiro-proxy"
-    image: "ghcr.io/cypherpunklabs-ai/hiro-proxy:placeholder"
+    image: "ghcr.io/cypherpunklabs-ai/hiro-proxy@sha256:fe8b0eb6c713580714bc3a73afa61a41d375331ea013c1ee2718512c3434faa0" # v0.1.2
     env:
       - APP_BIND_ADDR: "0.0.0.0:8080"
       - AUTH_ISSUER: "https://next-cheetah-8842.clerk.accounts.dev"
