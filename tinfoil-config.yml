@@ -12,7 +12,7 @@ containers:
     env:
       - APP_BIND_ADDR: "0.0.0.0:8080"
       - AUTH_ISSUER: "https://clerk.cypherpunklabs.io"
-      - AUTH_AUTHORIZED_PARTIES: "https://cypherpunklabs.io,https://frontend-web-wine-ten.vercel.app"
+      - AUTH_AUTHORIZED_PARTIES: "https://hiro.cypherpunklabs.io,https://frontend-web-wine-ten.vercel.app"
       - WEBAUTHN_RP_ORIGIN: "https://cypherpunklabs.io"
       - LOG_JSON: "true"
     secrets:
