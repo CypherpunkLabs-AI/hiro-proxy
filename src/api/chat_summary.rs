@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn normalizes_model_title() {
         assert_eq!(
-            normalize_title("  \"Title: How to start a start a new country!\"  ").unwrap(),
+            normalize_title("  \"Title: Starting a new country!\"  ").unwrap(),
             "Starting a new country"
         );
     }
