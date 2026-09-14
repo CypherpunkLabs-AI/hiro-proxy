@@ -26,7 +26,10 @@ pub(super) fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/v1/chats/{chat_id}",
-            get(get_chat).patch(patch_chat).delete(delete_chat),
+            get(get_chat)
+                .put(patch_chat)
+                .patch(patch_chat)
+                .delete(delete_chat),
         )
 }
 
