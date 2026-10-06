@@ -6,7 +6,13 @@ use axum::{
     routing::post,
 };
 
-use crate::{AppState, auth::User, error::ApiError, inference::DocumentProcessingError};
+use crate::{
+    AppState,
+    auth::User,
+    error::ApiError,
+    inference::{DOC_UPLOAD_MODEL_ID, DocumentProcessingError, UsageMetrics},
+    usage_limit::enforce_usage_quota,
+};
 
 const MAX_DOCUMENT_BYTES: usize = 20 * 1024 * 1024;
 const MULTIPART_OVERHEAD_BYTES: usize = 128 * 1024;
@@ -22,9 +28,10 @@ pub(super) fn routes() -> Router<Arc<AppState>> {
 
 async fn process_document(
     State(state): State<Arc<AppState>>,
-    _user: User,
+    user: User,
     mut multipart: Multipart,
 ) -> Result<Json<crate::inference::ProcessedDocument>, ApiError> {
+    enforce_usage_quota(&state.db, user.id()).await?;
     let mut upload = None;
     while let Some(mut field) = multipart
         .next_field()
@@ -92,6 +99,12 @@ async fn process_document(
             }
             DocumentProcessingError::Unavailable => ApiError::Unavailable,
         })?;
+    state.usage.enqueue(
+        uuid::Uuid::new_v4(),
+        user.id().to_owned(),
+        DOC_UPLOAD_MODEL_ID.to_owned(),
+        UsageMetrics::document_parse(),
+    );
     Ok(Json(processed))
 }
 

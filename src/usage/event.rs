@@ -12,7 +12,7 @@ use crate::inference::UsageMetrics;
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Debug, Serialize)]
-pub(super) struct UsageEventV1 {
+pub(super) struct UsageEventV2 {
     version: u8,
     request_id: Uuid,
     user_id: String,
@@ -22,6 +22,7 @@ pub(super) struct UsageEventV1 {
     completion_tokens: i64,
     total_tokens: i64,
     web_search_calls: i64,
+    document_parse_calls: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,7 +30,7 @@ pub(super) struct SignedUsageEnvelope {
     version: u8,
     timestamp: i64,
     nonce: String,
-    payload: UsageEventV1,
+    payload: UsageEventV2,
     signature: String,
 }
 
@@ -63,8 +64,8 @@ impl SignedUsageEnvelope {
         nonce: String,
         secret: &SecretString,
     ) -> anyhow::Result<Self> {
-        let payload = UsageEventV1 {
-            version: 1,
+        let payload = UsageEventV2 {
+            version: 2,
             request_id,
             user_id: user_id.to_owned(),
             model: model.to_owned(),
@@ -73,9 +74,10 @@ impl SignedUsageEnvelope {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             web_search_calls: usage.web_search_calls,
+            document_parse_calls: usage.document_parse_calls,
         };
         let canonical = serde_json::to_vec(&(
-            1_u8,
+            2_u8,
             timestamp,
             &nonce,
             payload.version,
@@ -87,6 +89,7 @@ impl SignedUsageEnvelope {
             payload.completion_tokens,
             payload.total_tokens,
             payload.web_search_calls,
+            payload.document_parse_calls,
         ))?;
         let mut mac = HmacSha256::new_from_slice(secret.expose_secret().as_bytes())
             .map_err(|_| anyhow::anyhow!("invalid usage HMAC key"))?;
@@ -94,7 +97,7 @@ impl SignedUsageEnvelope {
         let signature = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
 
         Ok(Self {
-            version: 1,
+            version: 2,
             timestamp,
             nonce,
             payload,
@@ -119,6 +122,7 @@ mod tests {
                 completion_tokens: 20,
                 total_tokens: 120,
                 web_search_calls: 2,
+                document_parse_calls: 0,
             },
             1_788_888_888,
             "abcdefghijklmnop".to_owned(),
@@ -128,7 +132,7 @@ mod tests {
 
         assert_eq!(
             envelope.signature,
-            "c2bia_zaoX9BiY3ZCsD_QqLvQRb8PwO8WMMMAG3BPZY"
+            "FiYRM1Rac9aqXj1HxlxVdGwyQKeshZ6HRuUhLdrj9gk"
         );
     }
 }

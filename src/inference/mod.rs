@@ -22,6 +22,7 @@ const MAX_DOCUMENT_RESULT_BYTES: usize = 20 * 1024 * 1024;
 pub const DEEPSEEK_V41_FLASH_MODEL_ID: &str = "deepseek-v4-1-flash";
 pub const KIMI_K3_MODEL_ID: &str = "kimi-k3";
 pub const GPT_OSS_MODEL_ID: &str = "gpt-oss-120b";
+pub const DOC_UPLOAD_MODEL_ID: &str = "doc-upload";
 
 pub type InferenceStream =
     Pin<Box<dyn Stream<Item = Result<InferenceEvent, InferenceError>> + Send>>;
@@ -39,6 +40,7 @@ pub struct UsageMetrics {
     pub completion_tokens: i64,
     pub total_tokens: i64,
     pub web_search_calls: i64,
+    pub document_parse_calls: i64,
 }
 
 pub struct InferenceCompletion {
@@ -87,6 +89,7 @@ impl UsageMetrics {
         let mut completion_tokens = None;
         let mut total_tokens = None;
         let mut web_search_calls = 0;
+        let mut document_parse_calls = 0;
 
         for part in value.split(',') {
             let Some((key, raw)) = part.trim().split_once('=') else {
@@ -101,6 +104,7 @@ impl UsageMetrics {
                 "completion" => completion_tokens = non_negative(raw),
                 "total" => total_tokens = non_negative(raw),
                 "web_search_calls" => web_search_calls = non_negative(raw)?,
+                "document_parse_calls" => document_parse_calls = non_negative(raw)?,
                 // model, cost_usd, uncached_prompt_tokens, and future optional
                 // fields are deliberately ignored; parsing is map-based, not
                 // positional.
@@ -121,7 +125,19 @@ impl UsageMetrics {
             completion_tokens,
             total_tokens,
             web_search_calls,
+            document_parse_calls,
         })
+    }
+
+    pub fn document_parse() -> Self {
+        Self {
+            prompt_tokens: 0,
+            cached_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            web_search_calls: 0,
+            document_parse_calls: 1,
+        }
     }
 }
 
@@ -426,6 +442,7 @@ mod tests {
                 completion_tokens: 42,
                 total_tokens: 109,
                 web_search_calls: 0,
+                document_parse_calls: 0,
             })
         );
         assert_eq!(
