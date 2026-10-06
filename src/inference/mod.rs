@@ -17,6 +17,8 @@ mod web_search;
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 const USAGE_REQUEST_HEADER: &str = "X-Tinfoil-Request-Usage-Metrics";
 const USAGE_RESPONSE_HEADER: &str = "X-Tinfoil-Usage-Metrics";
+const DOCUMENT_CONVERSION_PATH: &str = "/v1/convert/file?mode=images";
+const MAX_DOCUMENT_RESULT_BYTES: usize = 20 * 1024 * 1024;
 pub const DEEPSEEK_V41_FLASH_MODEL_ID: &str = "deepseek-v4-1-flash";
 pub const KIMI_K3_MODEL_ID: &str = "kimi-k3";
 pub const GPT_OSS_MODEL_ID: &str = "gpt-oss-120b";
@@ -42,6 +44,40 @@ pub struct UsageMetrics {
 pub struct InferenceCompletion {
     pub content: String,
     pub usage: UsageMetrics,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ProcessedDocument {
+    pub document: ProcessedDocumentContent,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ProcessedDocumentContent {
+    #[serde(default)]
+    pub md_content: String,
+    #[serde(default)]
+    pub pages: Vec<ProcessedDocumentPage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ProcessedDocumentPage {
+    pub page: u32,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub image: String,
+    #[serde(default)]
+    pub is_scanned: bool,
+}
+
+#[derive(Debug, Error)]
+pub enum DocumentProcessingError {
+    #[error("document processing service unavailable")]
+    Unavailable,
+    #[error("document was rejected")]
+    Rejected,
 }
 
 impl UsageMetrics {
@@ -171,6 +207,64 @@ pub async fn from_config(config: &Config) -> anyhow::Result<InferenceClient> {
 }
 
 impl InferenceClient {
+    pub async fn process_document(
+        &self,
+        filename: String,
+        content_type: String,
+        data: Vec<u8>,
+    ) -> Result<ProcessedDocument, DocumentProcessingError> {
+        let secure = self.client.secure_client();
+        let http = secure.http_client().map_err(|error| {
+            tracing::error!(error = ?error, "verified document HTTP client is unavailable");
+            DocumentProcessingError::Unavailable
+        })?;
+        let part = reqwest::multipart::Part::bytes(data)
+            .file_name(filename.clone())
+            .mime_str(&content_type)
+            .map_err(|_| DocumentProcessingError::Rejected)?;
+        let form = reqwest::multipart::Form::new()
+            .part("files", part)
+            .text("to_format", "md");
+        let response = http
+            .post(format!("{}{}", secure.base_url(), DOCUMENT_CONVERSION_PATH))
+            .bearer_auth(secure.api_key())
+            .multipart(form)
+            .timeout(std::time::Duration::from_secs(600))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(error = ?error, "document processing request failed");
+                DocumentProcessingError::Unavailable
+            })?;
+        if response.status().is_client_error() {
+            return Err(DocumentProcessingError::Rejected);
+        }
+        if !response.status().is_success() {
+            tracing::warn!(status = %response.status(), "document processing service failed");
+            return Err(DocumentProcessingError::Unavailable);
+        }
+
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| DocumentProcessingError::Unavailable)?;
+            if body.len().saturating_add(chunk.len()) > MAX_DOCUMENT_RESULT_BYTES {
+                tracing::warn!("document processing response exceeded the attachment limit");
+                return Err(DocumentProcessingError::Rejected);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let mut processed: ProcessedDocument = serde_json::from_slice(&body).map_err(|error| {
+            tracing::warn!(error = ?error, "document processing returned invalid JSON");
+            DocumentProcessingError::Unavailable
+        })?;
+        if processed.document.md_content.trim().is_empty() && processed.document.pages.is_empty() {
+            return Err(DocumentProcessingError::Rejected);
+        }
+        processed.document.filename = Some(filename);
+        Ok(processed)
+    }
+
     pub async fn stream(
         &self,
         request: InferenceRequest,

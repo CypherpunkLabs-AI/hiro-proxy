@@ -228,9 +228,7 @@ fn r2_config() -> anyhow::Result<Option<R2Config>> {
     }
     let presign_ttl_seconds = parsed("R2_PRESIGN_TTL_SECONDS", "900")?;
     let max_attachment_bytes = parsed("MAX_ATTACHMENT_BYTES", "20971520")?;
-    if !(60..=3600).contains(&presign_ttl_seconds)
-        || max_attachment_bytes <= 0
-    {
+    if !(60..=3600).contains(&presign_ttl_seconds) || max_attachment_bytes <= 0 {
         anyhow::bail!(
             "R2_PRESIGN_TTL_SECONDS must be 60..3600 and MAX_ATTACHMENT_BYTES must be positive"
         );

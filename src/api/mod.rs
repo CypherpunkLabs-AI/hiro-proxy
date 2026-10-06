@@ -7,6 +7,7 @@ use crate::{AppState, credentials};
 mod attachments;
 mod chat_summary;
 mod chats;
+mod documents;
 mod health;
 mod inference;
 mod messages;
@@ -19,6 +20,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .merge(attachments::routes())
         .merge(chat_summary::routes())
         .merge(chats::routes())
+        .merge(documents::routes())
         .merge(messages::routes())
         .merge(preferences::routes())
         .merge(inference::routes())

@@ -37,10 +37,7 @@ pub(super) fn routes() -> Router<Arc<AppState>> {
             "/v1/attachments/{attachment_id}/complete",
             post(complete_attachment),
         )
-        .route(
-            "/v1/attachments/{attachment_id}/upload",
-            post(sign_upload),
-        )
+        .route("/v1/attachments/{attachment_id}/upload", post(sign_upload))
         .route("/v1/attachments/link", put(link_attachments))
         .route("/v1/attachments/{attachment_id}/link", put(link_attachment))
 }
