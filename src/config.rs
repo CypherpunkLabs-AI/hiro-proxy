@@ -11,7 +11,6 @@ pub struct R2Config {
     pub secret_access_key: SecretString,
     pub presign_ttl_seconds: u64,
     pub max_attachment_bytes: i64,
-    pub attachment_part_size: i64,
 }
 
 #[derive(Clone)]
@@ -229,13 +228,11 @@ fn r2_config() -> anyhow::Result<Option<R2Config>> {
     }
     let presign_ttl_seconds = parsed("R2_PRESIGN_TTL_SECONDS", "900")?;
     let max_attachment_bytes = parsed("MAX_ATTACHMENT_BYTES", "20971520")?;
-    let attachment_part_size = parsed("ATTACHMENT_PART_SIZE", "8388608")?;
     if !(60..=3600).contains(&presign_ttl_seconds)
         || max_attachment_bytes <= 0
-        || attachment_part_size < 5 * 1024 * 1024
     {
         anyhow::bail!(
-            "R2_PRESIGN_TTL_SECONDS must be 60..3600, MAX_ATTACHMENT_BYTES must be positive, and ATTACHMENT_PART_SIZE must be at least 5 MiB"
+            "R2_PRESIGN_TTL_SECONDS must be 60..3600 and MAX_ATTACHMENT_BYTES must be positive"
         );
     }
     Ok(Some(R2Config {
@@ -249,7 +246,6 @@ fn r2_config() -> anyhow::Result<Option<R2Config>> {
         })?),
         presign_ttl_seconds,
         max_attachment_bytes,
-        attachment_part_size,
     }))
 }
 

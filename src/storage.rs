@@ -4,7 +4,6 @@ use aws_sdk_s3::{
     Client,
     config::{BehaviorVersion, Credentials, Region},
     presigning::PresigningConfig,
-    types::{CompletedMultipartUpload, CompletedPart},
 };
 use secrecy::ExposeSecret;
 
@@ -45,35 +44,17 @@ impl R2Storage {
         }
     }
 
-    pub async fn create_multipart(&self, key: &str) -> anyhow::Result<String> {
-        let output = self
-            .client
-            .create_multipart_upload()
-            .bucket(&self.bucket)
-            .key(key)
-            .content_type("application/octet-stream")
-            .send()
-            .await?;
-        output
-            .upload_id()
-            .map(str::to_owned)
-            .ok_or_else(|| anyhow::anyhow!("R2 did not return a multipart upload ID"))
-    }
-
-    pub async fn presign_part(
+    pub async fn presign_upload(
         &self,
         key: &str,
-        upload_id: &str,
-        part_number: i32,
         content_length: i64,
     ) -> anyhow::Result<PresignedRequest> {
         let request = self
             .client
-            .upload_part()
+            .put_object()
             .bucket(&self.bucket)
             .key(key)
-            .upload_id(upload_id)
-            .part_number(part_number)
+            .content_type("application/octet-stream")
             .content_length(content_length)
             .presigned(PresigningConfig::expires_in(self.presign_ttl)?)
             .await?;
@@ -84,47 +65,6 @@ impl R2Storage {
                 .map(|(name, value)| (name.to_owned(), value.to_owned()))
                 .collect(),
         })
-    }
-
-    pub async fn complete_multipart(
-        &self,
-        key: &str,
-        upload_id: &str,
-        parts: Vec<(i32, String)>,
-    ) -> anyhow::Result<()> {
-        let completed_parts = parts
-            .into_iter()
-            .map(|(part_number, e_tag)| {
-                CompletedPart::builder()
-                    .part_number(part_number)
-                    .e_tag(e_tag)
-                    .build()
-            })
-            .collect::<Vec<_>>();
-        self.client
-            .complete_multipart_upload()
-            .bucket(&self.bucket)
-            .key(key)
-            .upload_id(upload_id)
-            .multipart_upload(
-                CompletedMultipartUpload::builder()
-                    .set_parts(Some(completed_parts))
-                    .build(),
-            )
-            .send()
-            .await?;
-        Ok(())
-    }
-
-    pub async fn abort_multipart(&self, key: &str, upload_id: &str) -> anyhow::Result<()> {
-        self.client
-            .abort_multipart_upload()
-            .bucket(&self.bucket)
-            .key(key)
-            .upload_id(upload_id)
-            .send()
-            .await?;
-        Ok(())
     }
 
     pub async fn delete_object(&self, key: &str) -> anyhow::Result<()> {

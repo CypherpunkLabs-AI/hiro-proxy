@@ -21,7 +21,6 @@ use crate::{AppState, auth::User, error::ApiError, storage::R2Storage};
 use crate::crypto::ciphertext::{MIN_ENVELOPE_BYTES, WRAPPED_CHAT_KEY_BYTES, decode_envelope};
 
 const MAX_METADATA_CIPHERTEXT_BYTES: usize = 64 * 1024;
-const MAX_ETAG_BYTES: usize = 512;
 const AES_GCM_PART_OVERHEAD_BYTES: i64 = 28;
 const MAX_ATTACHMENT_BYTES: i64 = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_CHAT: i64 = 20;
@@ -35,12 +34,12 @@ pub(super) fn routes() -> Router<Arc<AppState>> {
             get(get_attachment).delete(delete_attachment),
         )
         .route(
-            "/v1/attachments/{attachment_id}/parts/{part_number}",
-            post(sign_part),
-        )
-        .route(
             "/v1/attachments/{attachment_id}/complete",
             post(complete_attachment),
+        )
+        .route(
+            "/v1/attachments/{attachment_id}/upload",
+            post(sign_upload),
         )
         .route("/v1/attachments/link", put(link_attachments))
         .route("/v1/attachments/{attachment_id}/link", put(link_attachment))
@@ -64,6 +63,7 @@ struct CreateAttachmentResponse {
     part_count: i32,
     ciphertext_size: i64,
     created_at: DateTime<Utc>,
+    upload: SignedRequestResponse,
 }
 
 #[derive(Serialize)]
@@ -72,19 +72,6 @@ struct SignedRequestResponse {
     url: String,
     headers: HashMap<String, String>,
     expires_in_seconds: u64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CompleteAttachmentRequest {
-    parts: Vec<CompletedPartRequest>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CompletedPartRequest {
-    part_number: i32,
-    e_tag: String,
 }
 
 #[derive(Deserialize)]
@@ -156,77 +143,59 @@ async fn create_attachment(
         WRAPPED_CHAT_KEY_BYTES,
         WRAPPED_CHAT_KEY_BYTES,
     )?;
-    let part_count_i64 = ((input.source_size - 1) / config.attachment_part_size) + 1;
-    if !(1..=10_000).contains(&part_count_i64) {
-        return Err(ApiError::BadRequest(
-            "attachment requires an unsupported number of parts".into(),
-        ));
-    }
-    let part_count = i32::try_from(part_count_i64)
-        .map_err(|_| ApiError::BadRequest("invalid attachment part count".into()))?;
     let ciphertext_size = input
         .source_size
-        .checked_add(part_count_i64 * AES_GCM_PART_OVERHEAD_BYTES)
+        .checked_add(AES_GCM_PART_OVERHEAD_BYTES)
         .ok_or_else(|| ApiError::BadRequest("attachment size overflow".into()))?;
     let attachment_id = input.attachment_id;
     let object_key = format!("attachments/{attachment_id}");
-    let upload_id = storage
-        .create_multipart(&object_key)
+    let signed = storage
+        .presign_upload(&object_key, ciphertext_size)
         .await
         .map_err(|error| {
-            tracing::warn!(error = ?error, "could not create R2 multipart upload");
+            tracing::warn!(error = ?error, "could not presign R2 attachment upload");
             ApiError::Unavailable
         })?;
 
-    let inserted = sqlx::query(
+    let row = sqlx::query(
         r#"INSERT INTO attachments
            (id, user_id, object_key, upload_id, status, encryption_version,
             encrypted_metadata, encrypted_key, ciphertext_size, part_size, part_count)
-           VALUES ($1, $2, $3, $4, 'uploading', $5, $6, $7, $8, $9, $10)
+           VALUES ($1, $2, $3, NULL, 'uploading', $4, $5, $6, $7, $8, 1)
            RETURNING created_at"#,
     )
     .bind(attachment_id)
     .bind(user.id())
     .bind(&object_key)
-    .bind(&upload_id)
     .bind(input.encryption_version)
     .bind(encrypted_metadata)
     .bind(encrypted_key)
     .bind(ciphertext_size)
-    .bind(config.attachment_part_size)
-    .bind(part_count)
+    .bind(MAX_ATTACHMENT_BYTES)
     .fetch_one(&state.db)
-    .await;
-    let row = match inserted {
-        Ok(row) => row,
-        Err(error) => {
-            if let Err(abort_error) = storage.abort_multipart(&object_key, &upload_id).await {
-                tracing::warn!(error = ?abort_error, "could not abort orphaned R2 multipart upload");
-            }
-            return Err(error.into());
-        }
-    };
+    .await?;
 
     Ok((
         StatusCode::CREATED,
         Json(CreateAttachmentResponse {
             attachment_id,
-            plaintext_part_size: config.attachment_part_size,
-            part_count,
+            plaintext_part_size: MAX_ATTACHMENT_BYTES,
+            part_count: 1,
             ciphertext_size,
             created_at: row.try_get("created_at")?,
+            upload: signed_response(&state, signed),
         }),
     ))
 }
 
-async fn sign_part(
+async fn sign_upload(
     State(state): State<Arc<AppState>>,
     user: User,
-    Path((attachment_id, part_number)): Path<(Uuid, i32)>,
+    Path(attachment_id): Path<Uuid>,
 ) -> Result<Json<SignedRequestResponse>, ApiError> {
     let storage = storage(&state)?;
     let row = sqlx::query(
-        r#"SELECT object_key, upload_id, ciphertext_size, part_size, part_count
+        r#"SELECT object_key, ciphertext_size
            FROM attachments
            WHERE id = $1 AND user_id = $2 AND status = 'uploading'"#,
     )
@@ -235,33 +204,13 @@ async fn sign_part(
     .fetch_optional(&state.db)
     .await?
     .ok_or(ApiError::NotFound)?;
-    let part_count: i32 = row.try_get("part_count")?;
-    if !(1..=part_count).contains(&part_number) {
-        return Err(ApiError::BadRequest(format!(
-            "partNumber must be between 1 and {part_count}"
-        )));
-    }
     let object_key: String = row.try_get("object_key")?;
-    let upload_id: String = row.try_get("upload_id")?;
     let ciphertext_size: i64 = row.try_get("ciphertext_size")?;
-    let part_size: i64 = row.try_get("part_size")?;
-    let plaintext_size = ciphertext_size - i64::from(part_count) * AES_GCM_PART_OVERHEAD_BYTES;
-    let plaintext_offset = i64::from(part_number - 1) * part_size;
-    let expected_plaintext_size = (plaintext_size - plaintext_offset).min(part_size);
-    let expected_ciphertext_size = expected_plaintext_size + AES_GCM_PART_OVERHEAD_BYTES;
-    if expected_plaintext_size <= 0 {
-        return Err(ApiError::BadRequest("invalid attachment part size".into()));
-    }
     let signed = storage
-        .presign_part(
-            &object_key,
-            &upload_id,
-            part_number,
-            expected_ciphertext_size,
-        )
+        .presign_upload(&object_key, ciphertext_size)
         .await
         .map_err(|error| {
-            tracing::warn!(error = ?error, "could not presign R2 upload part");
+            tracing::warn!(error = ?error, "could not renew R2 attachment upload");
             ApiError::Unavailable
         })?;
     Ok(Json(signed_response(&state, signed)))
@@ -271,55 +220,27 @@ async fn complete_attachment(
     State(state): State<Arc<AppState>>,
     user: User,
     Path(attachment_id): Path<Uuid>,
-    Json(mut input): Json<CompleteAttachmentRequest>,
 ) -> Result<StatusCode, ApiError> {
     let storage = storage(&state)?;
     let row = sqlx::query(
-        r#"SELECT object_key, upload_id, ciphertext_size, part_count
+        r#"SELECT status, object_key, ciphertext_size
            FROM attachments
-           WHERE id = $1 AND user_id = $2 AND status = 'uploading'"#,
+           WHERE id = $1 AND user_id = $2"#,
     )
     .bind(attachment_id)
     .bind(user.id())
     .fetch_optional(&state.db)
     .await?
     .ok_or(ApiError::NotFound)?;
-    let part_count: i32 = row.try_get("part_count")?;
-    if input.parts.len() != part_count as usize {
-        return Err(ApiError::BadRequest(format!(
-            "parts must contain exactly {part_count} entries"
-        )));
+    let status: String = row.try_get("status")?;
+    if status == "ready" || status == "attached" {
+        return Ok(StatusCode::NO_CONTENT);
     }
-    input.parts.sort_by_key(|part| part.part_number);
-    for (index, part) in input.parts.iter().enumerate() {
-        if part.part_number != index as i32 + 1
-            || part.e_tag.is_empty()
-            || part.e_tag.len() > MAX_ETAG_BYTES
-            || part.e_tag.chars().any(char::is_control)
-        {
-            return Err(ApiError::BadRequest(
-                "parts must contain every part number once with a valid ETag".into(),
-            ));
-        }
+    if status != "uploading" {
+        return Err(ApiError::Conflict);
     }
     let object_key: String = row.try_get("object_key")?;
-    let upload_id: String = row.try_get("upload_id")?;
     let ciphertext_size: i64 = row.try_get("ciphertext_size")?;
-    storage
-        .complete_multipart(
-            &object_key,
-            &upload_id,
-            input
-                .parts
-                .into_iter()
-                .map(|part| (part.part_number, part.e_tag))
-                .collect(),
-        )
-        .await
-        .map_err(|error| {
-            tracing::warn!(error = ?error, "could not complete R2 multipart upload");
-            ApiError::Unavailable
-        })?;
     let stored_size = storage.object_size(&object_key).await.map_err(|error| {
         tracing::warn!(error = ?error, "could not verify completed R2 attachment size");
         ApiError::Unavailable
@@ -544,7 +465,7 @@ async fn delete_attachment(
 ) -> Result<StatusCode, ApiError> {
     let storage = storage(&state)?;
     let row = sqlx::query(
-        r#"SELECT object_key, upload_id, status
+        r#"SELECT object_key
            FROM attachments WHERE id = $1 AND user_id = $2"#,
     )
     .bind(attachment_id)
@@ -553,14 +474,7 @@ async fn delete_attachment(
     .await?
     .ok_or(ApiError::NotFound)?;
     let object_key: String = row.try_get("object_key")?;
-    let status: String = row.try_get("status")?;
-    let result = if status == "uploading" {
-        let upload_id: String = row.try_get("upload_id")?;
-        storage.abort_multipart(&object_key, &upload_id).await
-    } else {
-        storage.delete_object(&object_key).await
-    };
-    result.map_err(|error| {
+    storage.delete_object(&object_key).await.map_err(|error| {
         tracing::warn!(error = ?error, "could not delete R2 attachment object");
         ApiError::Unavailable
     })?;
