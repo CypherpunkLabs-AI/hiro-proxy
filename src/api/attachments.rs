@@ -231,7 +231,7 @@ async fn complete_attachment(
     .ok_or(ApiError::NotFound)?;
     let status: String = row.try_get("status")?;
     if status == "ready" || status == "attached" {
-        return Ok(StatusCode::NO_CONTENT);
+        return Ok(StatusCode::OK);
     }
     if status != "uploading" {
         return Err(ApiError::Conflict);
@@ -267,7 +267,7 @@ async fn complete_attachment(
     if updated.rows_affected() != 1 {
         return Err(ApiError::Conflict);
     }
-    Ok(StatusCode::NO_CONTENT)
+    Ok(StatusCode::OK)
 }
 
 async fn link_attachment(
@@ -290,7 +290,7 @@ async fn link_attachment(
         &[(attachment_id, encrypted_key)],
     )
     .await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(StatusCode::OK)
 }
 
 async fn link_attachments(
@@ -329,7 +329,7 @@ async fn link_attachments(
         &attachments,
     )
     .await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(StatusCode::OK)
 }
 
 async fn link_attachment_records(
@@ -480,7 +480,7 @@ async fn delete_attachment(
         .bind(user.id())
         .execute(&state.db)
         .await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(StatusCode::OK)
 }
 
 fn storage(state: &AppState) -> Result<&R2Storage, ApiError> {
