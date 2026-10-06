@@ -31,7 +31,10 @@ async fn process_document(
     user: User,
     mut multipart: Multipart,
 ) -> Result<Json<crate::inference::ProcessedDocument>, ApiError> {
-    enforce_usage_quota(&state.db, user.id()).await?;
+    let plan = enforce_usage_quota(&state.db, user.id()).await?;
+    if !plan.is_pro() {
+        return Err(ApiError::Forbidden);
+    }
     let mut upload = None;
     while let Some(mut field) = multipart
         .next_field()

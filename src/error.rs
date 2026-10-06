@@ -9,6 +9,8 @@ use serde::Serialize;
 pub enum ApiError {
     #[error("authentication required")]
     Unauthorized,
+    #[error("Pro plan required")]
+    Forbidden,
     #[error("resource not found")]
     NotFound,
     #[error("conflict")]
@@ -93,6 +95,7 @@ impl IntoResponse for ApiError {
 
         let (status, code) = match &self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::Conflict => (StatusCode::CONFLICT, "conflict"),
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request"),

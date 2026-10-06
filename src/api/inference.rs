@@ -95,6 +95,14 @@ async fn chat(
     validate_chat(&input)?;
     state.inference_request_limiter.check(user.id())?;
     let plan = enforce_usage_quota(&state.db, user.id()).await?;
+    let has_attachments = input
+        .messages
+        .iter()
+        .any(|message| matches!(&message.content, ClientChatContent::Parts(_)));
+    if has_attachments && !plan.is_pro() {
+        return Err(ApiError::Forbidden);
+    }
+    let web_search = input.web_search && plan.is_pro();
     let selected_model = resolve_model(input.model.as_deref(), plan)?.to_owned();
     let inference_permit = state
         .inference_slots
@@ -142,7 +150,7 @@ async fn chat(
             temperature: state.config.inference_temperature,
             max_tokens: state.config.inference_max_tokens,
             user_cache_secret: cache_secret,
-            web_search: input.web_search,
+            web_search,
         })
         .await
         .map_err(|_| ApiError::Unavailable)?;

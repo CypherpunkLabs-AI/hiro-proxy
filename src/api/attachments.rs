@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::{AppState, auth::User, error::ApiError, storage::R2Storage};
+use crate::{AppState, auth::User, error::ApiError, storage::R2Storage, usage_limit::require_pro};
 
 use crate::crypto::ciphertext::{MIN_ENVELOPE_BYTES, WRAPPED_CHAT_KEY_BYTES, decode_envelope};
 
@@ -114,6 +114,7 @@ async fn create_attachment(
     user: User,
     Json(input): Json<CreateAttachmentRequest>,
 ) -> Result<(StatusCode, Json<CreateAttachmentResponse>), ApiError> {
+    require_pro(&state.db, user.id()).await?;
     let storage = storage(&state)?;
     let config = state.config.r2.as_ref().ok_or(ApiError::Unavailable)?;
     let max_attachment_bytes = config.max_attachment_bytes.min(MAX_ATTACHMENT_BYTES);
@@ -190,6 +191,7 @@ async fn sign_upload(
     user: User,
     Path(attachment_id): Path<Uuid>,
 ) -> Result<Json<SignedRequestResponse>, ApiError> {
+    require_pro(&state.db, user.id()).await?;
     let storage = storage(&state)?;
     let row = sqlx::query(
         r#"SELECT object_key, ciphertext_size
@@ -218,6 +220,7 @@ async fn complete_attachment(
     user: User,
     Path(attachment_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
+    require_pro(&state.db, user.id()).await?;
     let storage = storage(&state)?;
     let row = sqlx::query(
         r#"SELECT status, object_key, ciphertext_size
@@ -276,6 +279,7 @@ async fn link_attachment(
     Path(attachment_id): Path<Uuid>,
     Json(input): Json<LinkAttachmentRequest>,
 ) -> Result<StatusCode, ApiError> {
+    require_pro(&state.db, user.id()).await?;
     let encrypted_key = decode_envelope(
         "encryptedKey",
         &input.encrypted_key,
@@ -298,6 +302,7 @@ async fn link_attachments(
     user: User,
     Json(input): Json<LinkAttachmentsRequest>,
 ) -> Result<StatusCode, ApiError> {
+    require_pro(&state.db, user.id()).await?;
     if input.attachments.is_empty() || input.attachments.len() > MAX_ATTACHMENTS_PER_CHAT as usize {
         return Err(ApiError::BadRequest(
             "attachments must contain 1..20 entries".into(),

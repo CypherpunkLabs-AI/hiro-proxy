@@ -21,6 +21,29 @@ impl UsagePlan {
     }
 }
 
+pub async fn require_pro(db: &PgPool, user_id: &str) -> Result<(), ApiError> {
+    let is_pro = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM stripe_subscriptions
+            WHERE user_id = $1
+              AND sub_tier = 'pro'
+              AND status IN ('active', 'trialing', 'past_due', 'unpaid', 'paused')
+        )
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await?;
+
+    if is_pro {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden)
+    }
+}
+
 pub async fn enforce_usage_quota(db: &PgPool, user_id: &str) -> Result<UsagePlan, ApiError> {
     let decision: QuotaDecision = sqlx::query_as(
         r#"
