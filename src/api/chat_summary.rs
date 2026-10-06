@@ -62,11 +62,11 @@ async fn chat_title(
             messages: vec![
                 ChatMessage {
                     role: ChatRole::System,
-                    content: TITLE_PROMPT.to_owned(),
+                    content: TITLE_PROMPT.into(),
                 },
                 ChatMessage {
                     role: ChatRole::User,
-                    content: message.to_owned(),
+                    content: message.into(),
                 },
             ],
             temperature: 0.2,

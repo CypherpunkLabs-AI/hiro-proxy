@@ -228,7 +228,7 @@ fn r2_config() -> anyhow::Result<Option<R2Config>> {
         anyhow::bail!("R2_BUCKET must contain 1..255 characters");
     }
     let presign_ttl_seconds = parsed("R2_PRESIGN_TTL_SECONDS", "900")?;
-    let max_attachment_bytes = parsed("MAX_ATTACHMENT_BYTES", "1073741824")?;
+    let max_attachment_bytes = parsed("MAX_ATTACHMENT_BYTES", "20971520")?;
     let attachment_part_size = parsed("ATTACHMENT_PART_SIZE", "8388608")?;
     if !(60..=3600).contains(&presign_ttl_seconds)
         || max_attachment_bytes <= 0

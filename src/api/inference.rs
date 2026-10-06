@@ -9,10 +9,11 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     response::{Sse, sse::Event},
     routing::post,
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -23,14 +24,18 @@ use crate::{
     crypto::cache_secret::derive_user_cache_secret,
     error::ApiError,
     inference::{
-        ChatMessage, ChatRole, DEEPSEEK_V41_FLASH_MODEL_ID, InferenceEvent, InferenceRequest,
-        KIMI_K3_MODEL_ID, UsageMetrics,
+        ChatContent, ChatContentPart, ChatImageUrl, ChatMessage, ChatRole,
+        DEEPSEEK_V41_FLASH_MODEL_ID, InferenceEvent, InferenceRequest, KIMI_K3_MODEL_ID,
+        UsageMetrics,
     },
     usage_limit::{UsagePlan, enforce_usage_quota},
 };
 
 pub(super) fn routes() -> Router<Arc<AppState>> {
-    Router::new().route("/v3/chat/completions", post(chat))
+    Router::new().route(
+        "/v3/chat/completions",
+        post(chat).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+    )
 }
 
 #[derive(Deserialize)]
@@ -52,7 +57,27 @@ struct ChatRequest {
 #[serde(deny_unknown_fields)]
 struct ClientChatMessage {
     role: ClientChatRole,
-    content: String,
+    content: ClientChatContent,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ClientChatContent {
+    Text(String),
+    Parts(Vec<ClientChatContentPart>),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum ClientChatContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ClientImageUrl },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClientImageUrl {
+    url: String,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -82,14 +107,31 @@ async fn chat(
     let mut messages = Vec::with_capacity(input.messages.len() + 1);
     messages.push(ChatMessage {
         role: ChatRole::System,
-        content: state.config.inference_system_prompt.clone(),
+        content: state.config.inference_system_prompt.clone().into(),
     });
-    messages.extend(input.messages.into_iter().map(|message| ChatMessage {
-        role: match message.role {
-            ClientChatRole::User => ChatRole::User,
-            ClientChatRole::Assistant => ChatRole::Assistant,
-        },
-        content: message.content,
+    messages.extend(input.messages.into_iter().map(|message| {
+        ChatMessage {
+            role: match message.role {
+                ClientChatRole::User => ChatRole::User,
+                ClientChatRole::Assistant => ChatRole::Assistant,
+            },
+            content: match message.content {
+                ClientChatContent::Text(text) => ChatContent::Text(text),
+                ClientChatContent::Parts(parts) => ChatContent::Parts(
+                    parts
+                        .into_iter()
+                        .map(|part| match part {
+                            ClientChatContentPart::Text { text } => ChatContentPart::Text { text },
+                            ClientChatContentPart::ImageUrl { image_url } => {
+                                ChatContentPart::ImageUrl {
+                                    image_url: ChatImageUrl { url: image_url.url },
+                                }
+                            }
+                        })
+                        .collect(),
+                ),
+            },
+        }
     }));
 
     let inference_stream = state
@@ -185,22 +227,84 @@ fn validate_chat(input: &ChatRequest) -> Result<(), ApiError> {
             "messages must contain 1..128 entries".into(),
         ));
     }
-    let total: usize = input
-        .messages
-        .iter()
-        .map(|message| message.content.len())
-        .sum();
-    if total > 512 * 1024
-        || input
-            .messages
-            .iter()
-            .any(|message| message.content.is_empty())
-    {
+    let mut text_bytes = 0_usize;
+    let mut image_bytes = 0_usize;
+    let mut image_count = 0_usize;
+    for message in &input.messages {
+        match &message.content {
+            ClientChatContent::Text(text) => {
+                if text.is_empty() {
+                    return Err(invalid_content());
+                }
+                text_bytes = text_bytes.saturating_add(text.len());
+            }
+            ClientChatContent::Parts(parts) => {
+                if parts.is_empty() || parts.len() > 64 {
+                    return Err(invalid_content());
+                }
+                if matches!(message.role, ClientChatRole::Assistant)
+                    && parts
+                        .iter()
+                        .any(|part| matches!(part, ClientChatContentPart::ImageUrl { .. }))
+                {
+                    return Err(ApiError::BadRequest(
+                        "assistant messages cannot contain images".into(),
+                    ));
+                }
+                for part in parts {
+                    match part {
+                        ClientChatContentPart::Text { text } => {
+                            if text.is_empty() {
+                                return Err(invalid_content());
+                            }
+                            text_bytes = text_bytes.saturating_add(text.len());
+                        }
+                        ClientChatContentPart::ImageUrl { image_url } => {
+                            image_count += 1;
+                            image_bytes = image_bytes
+                                .saturating_add(validate_image_data_url(&image_url.url)?);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if text_bytes > 20 * 1024 * 1024 || image_count > 20 || image_bytes > 20 * 1024 * 1024 {
         return Err(ApiError::BadRequest(
-            "message content is empty or exceeds the 512 KiB aggregate limit".into(),
+            "message content exceeds the text or image limit".into(),
         ));
     }
     Ok(())
+}
+
+fn invalid_content() -> ApiError {
+    ApiError::BadRequest("message content is empty or invalid".into())
+}
+
+fn validate_image_data_url(url: &str) -> Result<usize, ApiError> {
+    const PREFIXES: [&str; 4] = [
+        "data:image/jpeg;base64,",
+        "data:image/png;base64,",
+        "data:image/webp;base64,",
+        "data:image/gif;base64,",
+    ];
+    let payload = PREFIXES
+        .iter()
+        .find_map(|prefix| url.strip_prefix(prefix))
+        .ok_or_else(|| {
+            ApiError::BadRequest(
+                "image_url must be a base64 JPEG, PNG, WebP, or GIF data URL".into(),
+            )
+        })?;
+    if payload.is_empty() || payload.len() > 28 * 1024 * 1024 {
+        return Err(ApiError::BadRequest(
+            "image_url contains invalid base64 data".into(),
+        ));
+    }
+    STANDARD
+        .decode(payload)
+        .map(|bytes| bytes.len())
+        .map_err(|_| ApiError::BadRequest("image_url contains invalid base64 data".into()))
 }
 
 #[cfg(test)]
@@ -249,6 +353,41 @@ mod tests {
             "user_cache_secret": "injected-by-secure-client"
         });
         assert!(serde_json::from_value::<ChatRequest>(request).is_ok());
+    }
+
+    #[test]
+    fn public_chat_contract_accepts_text_and_image_parts() {
+        let request = serde_json::json!({
+            "request_id": Uuid::new_v4(),
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "describe this"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/jpeg;base64,/9j/2Q=="}
+                    }
+                ]
+            }]
+        });
+        let request = serde_json::from_value::<ChatRequest>(request).unwrap();
+        assert!(validate_chat(&request).is_ok());
+    }
+
+    #[test]
+    fn public_chat_contract_rejects_remote_images() {
+        let request = serde_json::json!({
+            "request_id": Uuid::new_v4(),
+            "messages": [{
+                "role": "user",
+                "content": [{
+                    "type": "image_url",
+                    "image_url": {"url": "https://example.com/image.jpg"}
+                }]
+            }]
+        });
+        let request = serde_json::from_value::<ChatRequest>(request).unwrap();
+        assert!(validate_chat(&request).is_err());
     }
 
     #[test]

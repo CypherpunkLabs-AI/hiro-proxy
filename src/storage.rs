@@ -65,6 +65,7 @@ impl R2Storage {
         key: &str,
         upload_id: &str,
         part_number: i32,
+        content_length: i64,
     ) -> anyhow::Result<PresignedRequest> {
         let request = self
             .client
@@ -73,6 +74,7 @@ impl R2Storage {
             .key(key)
             .upload_id(upload_id)
             .part_number(part_number)
+            .content_length(content_length)
             .presigned(PresigningConfig::expires_in(self.presign_ttl)?)
             .await?;
         Ok(PresignedRequest {
@@ -133,6 +135,18 @@ impl R2Storage {
             .send()
             .await?;
         Ok(())
+    }
+
+    pub async fn object_size(&self, key: &str) -> anyhow::Result<i64> {
+        Ok(self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await?
+            .content_length()
+            .unwrap_or_default())
     }
 
     pub async fn presign_download(&self, key: &str) -> anyhow::Result<PresignedRequest> {

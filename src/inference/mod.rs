@@ -112,7 +112,38 @@ pub struct InferenceRequest {
 #[derive(Clone, Deserialize, Serialize)]
 pub struct ChatMessage {
     pub role: ChatRole,
-    pub content: String,
+    pub content: ChatContent,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum ChatContent {
+    Text(String),
+    Parts(Vec<ChatContentPart>),
+}
+
+impl From<String> for ChatContent {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+
+impl From<&str> for ChatContent {
+    fn from(value: &str) -> Self {
+        Self::Text(value.to_owned())
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ChatImageUrl },
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct ChatImageUrl {
+    pub url: String,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
