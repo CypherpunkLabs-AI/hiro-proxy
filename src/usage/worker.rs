@@ -61,7 +61,7 @@ pub(super) struct UsageWorker {
 impl UsageWorker {
     pub(super) fn new(config: &UsageQueueConfig) -> anyhow::Result<Self> {
         let endpoint = Url::parse(&format!(
-            "https://api.cloudflare.com/client/v4/accounts/{}/queues/{}/messages/bulk",
+            "https://api.cloudflare.com/client/v4/accounts/{}/queues/{}/messages/batch",
             config.account_id, config.queue_id
         ))?;
         Ok(Self {

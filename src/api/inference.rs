@@ -23,7 +23,7 @@ use crate::{
     crypto::cache_secret::derive_user_cache_secret,
     error::ApiError,
     inference::{
-        ChatMessage, ChatRole, GLM_53_FLASH_MODEL_ID, InferenceEvent, InferenceRequest,
+        ChatMessage, ChatRole, DEEPSEEK_V41_FLASH_MODEL_ID, InferenceEvent, InferenceRequest,
         KIMI_K3_MODEL_ID, UsageMetrics,
     },
     usage_limit::{UsagePlan, enforce_usage_quota},
@@ -170,11 +170,11 @@ async fn chat(
 
 fn resolve_model(requested: Option<&str>, plan: UsagePlan) -> Result<&'static str, ApiError> {
     match requested.map(str::trim).unwrap_or_default() {
-        "" | "glm-5-3-flash" => Ok(GLM_53_FLASH_MODEL_ID),
+        "" | "deepseek-v4-1-flash" => Ok(DEEPSEEK_V41_FLASH_MODEL_ID),
         "kimi-k3" if plan.is_pro() => Ok(KIMI_K3_MODEL_ID),
-        "kimi-k3" => Ok(GLM_53_FLASH_MODEL_ID),
+        "kimi-k3" => Ok(DEEPSEEK_V41_FLASH_MODEL_ID),
         _ => Err(ApiError::BadRequest(
-            "model must be 'glm-5-3-flash' or 'kimi-k3'".into(),
+            "model must be 'deepseek-v4-1-flash' or 'kimi-k3'".into(),
         )),
     }
 }
@@ -255,11 +255,11 @@ mod tests {
     fn model_selection_defaults_and_enforces_entitlement() {
         assert_eq!(
             resolve_model(None, UsagePlan::Free).unwrap(),
-            "glm-5-3-flash"
+            "deepseek-v4-1-flash"
         );
         assert_eq!(
             resolve_model(Some("kimi-k3"), UsagePlan::Free).unwrap(),
-            "glm-5-3-flash"
+            "deepseek-v4-1-flash"
         );
         assert_eq!(
             resolve_model(Some("kimi-k3"), UsagePlan::Pro).unwrap(),
